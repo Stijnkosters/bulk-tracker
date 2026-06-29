@@ -136,6 +136,29 @@
   .toast.err { background: var(--over); color: #2A0A0A; }
   .empty { color: var(--dim); font-size: 13px; text-align: center; padding: 14px 0; }
 
+  /* SAVE STATUS */
+  .save-status { display: flex; align-items: center; justify-content: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--dim); padding: 14px 0 2px; transition: color .2s; }
+  .save-status .sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); transition: background .2s; }
+  .save-status.saving { color: var(--under); } .save-status.saving .sdot { background: var(--under); }
+  .save-status.saved { color: var(--good); } .save-status.saved .sdot { background: var(--good); }
+  .save-status.error { color: var(--over); } .save-status.error .sdot { background: var(--over); }
+
+  /* EXERCISES */
+  .btn-add { background: var(--surface-2); color: var(--accent); border: 1px dashed var(--line); width: 100%; padding: 12px; border-radius: 11px; font-family: var(--display); font-weight: 600; font-size: 13px; margin-top: 4px; }
+  .btn-add:active { background: var(--bg); }
+  .ex { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .ex-top { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .ex-name { flex: 1; font-family: var(--body) !important; font-size: 15px !important; padding: 11px !important; background: var(--surface) !important; }
+  .ex-del, .set-del { background: none; color: var(--dim); font-size: 18px; line-height: 1; padding: 6px 8px; flex-shrink: 0; border-radius: 8px; }
+  .ex-del:active, .set-del:active { background: var(--bg); color: var(--over); }
+  .sets { display: flex; flex-direction: column; gap: 7px; margin-bottom: 8px; }
+  .set { display: flex; align-items: center; gap: 8px; }
+  .set-n { font-family: var(--mono); font-size: 12px; color: var(--dim); width: 16px; flex-shrink: 0; text-align: center; }
+  .set-kg, .set-reps { flex: 1; padding: 11px !important; text-align: center; background: var(--surface) !important; font-size: 15px !important; }
+  .set .x { color: var(--dim); font-family: var(--mono); flex-shrink: 0; }
+  .set-add { background: none; color: var(--muted); border: none; font-family: var(--display); font-weight: 600; font-size: 12px; padding: 4px 2px; text-align: left; }
+  .set-add:active { color: var(--accent); }
+
   /* CHART */
   .chart-svg { width: 100%; height: 168px; display: block; overflow: visible; }
   .chart-svg .grid { stroke: var(--line); stroke-width: 1; }
@@ -198,17 +221,24 @@
       <div class="field"><label for="fCarbs">Koolhydraten (g)</label><input type="number" inputmode="numeric" id="fCarbs" placeholder="400" /></div>
       <div class="field"><label for="fWaist">Buik (cm)</label><input type="number" inputmode="decimal" step="0.1" id="fWaist" placeholder="optioneel" /></div>
     </div>
-    <div class="field"><label for="fTraining">Training</label><input type="text" id="fTraining" style="font-family:var(--body)" placeholder="Push / Pull / Legs ..." /></div>
+    <div class="field"><label for="fTraining">Training (type dag)</label><input type="text" id="fTraining" style="font-family:var(--body)" placeholder="Push / Pull / Legs ..." /></div>
+
+    <div class="field">
+      <label>Oefeningen · sets &amp; reps</label>
+      <div id="exList"></div>
+      <button type="button" class="btn-add" id="addExBtn">+ Oefening</button>
+    </div>
+
     <div class="field"><label for="fNotes">Notitie</label><textarea id="fNotes" placeholder="Hoe voelde de dag / training?"></textarea></div>
 
     <!-- live macro preview -->
-    <div style="margin:18px 0 16px">
+    <div style="margin:18px 0 6px">
       <div class="macro"><div class="top"><span class="name">Eiwit</span><span class="vals"><b id="pNow">0</b> / <span id="pTar">160</span> g</span></div><div class="track"><div class="fill" id="pBar"></div></div></div>
       <div class="macro"><div class="top"><span class="name">Vet</span><span class="vals"><b id="fNow">0</b> / <span id="fTar">95</span> g</span></div><div class="track"><div class="fill" id="fBar"></div></div></div>
       <div class="macro"><div class="top"><span class="name">Koolhydraten</span><span class="vals"><b id="cNow">0</b> / <span id="cTar">400</span> g</span></div><div class="track"><div class="fill" id="cBar"></div></div></div>
       <div class="macro"><div class="top"><span class="name">Calorieën</span><span class="vals"><b id="kNow">0</b> / <span id="kTar">3100</span></span></div><div class="track"><div class="fill" id="kBar"></div></div></div>
     </div>
-    <button class="btn-primary" id="saveBtn">Dag opslaan</button>
+    <div class="save-status" id="saveStatus"><span class="sdot"></span><span id="saveText">Alles wordt automatisch opgeslagen</span></div>
   </div>
 
   <!-- WEEK -->
@@ -311,14 +341,78 @@ function livePreview() {
   setBar("kBar", k, s.target_kcal, "kcal");
 }
 
+let loadingForm = false;
 function loadDay(date) {
+  loadingForm = true;
   const log = STATE.logs.find((l) => l.date === date);
   $("fDate").value = date;
   const set = (id, v) => ($(id).value = v == null ? "" : v);
   set("fWeight", log?.weight); set("fKcal", log?.kcal); set("fProtein", log?.protein);
   set("fFat", log?.fat); set("fCarbs", log?.carbs); set("fWaist", log?.waist);
   $("fTraining").value = log?.training || ""; $("fNotes").value = log?.notes || "";
+  $("exList").innerHTML = "";
+  (log?.exercises || []).forEach((ex) => addExercise(ex));
   livePreview();
+  setStatus("idle");
+  loadingForm = false;
+}
+
+// ---- Oefeningen ----
+function addExercise(data) {
+  const ex = document.createElement("div");
+  ex.className = "ex";
+  ex.innerHTML = `
+    <div class="ex-top">
+      <input class="ex-name" placeholder="Oefening (bijv. Bench press)" />
+      <button type="button" class="ex-del" aria-label="Verwijder oefening">✕</button>
+    </div>
+    <div class="sets"></div>
+    <button type="button" class="set-add">+ set</button>`;
+  $("exList").appendChild(ex);
+  ex.querySelector(".ex-name").value = data?.name || "";
+  ex.querySelector(".ex-name").addEventListener("input", scheduleSave);
+  ex.querySelector(".ex-del").onclick = () => { ex.remove(); scheduleSave(); };
+  const setsWrap = ex.querySelector(".sets");
+  ex.querySelector(".set-add").onclick = () => { addSet(setsWrap); scheduleSave(); };
+  const sets = data?.sets && data.sets.length ? data.sets : [null];
+  sets.forEach((s) => addSet(setsWrap, s));
+  return ex;
+}
+
+function addSet(wrap, data) {
+  const row = document.createElement("div");
+  row.className = "set";
+  row.innerHTML = `
+    <span class="set-n"></span>
+    <input class="set-kg" inputmode="decimal" placeholder="kg" />
+    <span class="x">×</span>
+    <input class="set-reps" inputmode="numeric" placeholder="reps" />
+    <button type="button" class="set-del" aria-label="Verwijder set">✕</button>`;
+  wrap.appendChild(row);
+  if (data) { row.querySelector(".set-kg").value = data.weight ?? ""; row.querySelector(".set-reps").value = data.reps ?? ""; }
+  row.querySelector(".set-kg").addEventListener("input", scheduleSave);
+  row.querySelector(".set-reps").addEventListener("input", scheduleSave);
+  row.querySelector(".set-del").onclick = () => { row.remove(); renumber(wrap); scheduleSave(); };
+  renumber(wrap);
+}
+
+function renumber(wrap) {
+  [...wrap.querySelectorAll(".set-n")].forEach((el, i) => (el.textContent = i + 1));
+}
+
+function collectExercises() {
+  const out = [];
+  document.querySelectorAll("#exList .ex").forEach((ex) => {
+    const name = ex.querySelector(".ex-name").value.trim();
+    const sets = [];
+    ex.querySelectorAll(".set").forEach((s) => {
+      const kg = s.querySelector(".set-kg").value;
+      const reps = s.querySelector(".set-reps").value;
+      if (kg !== "" || reps !== "") sets.push({ weight: kg === "" ? null : Number(kg), reps: reps === "" ? null : Number(reps) });
+    });
+    if (name || sets.length) out.push({ name, sets });
+  });
+  return out;
 }
 
 function rollingAvg(logsAsc, endIdx, win = 7) {
@@ -473,15 +567,50 @@ async function load() {
   renderAll();
 }
 
-async function save() {
-  const body = {
+function collectForm() {
+  return {
     date: $("fDate").value || todayStr(),
     weight: $("fWeight").value, kcal: $("fKcal").value, protein: $("fProtein").value,
     fat: $("fFat").value, carbs: $("fCarbs").value, waist: $("fWaist").value,
     training: $("fTraining").value, notes: $("fNotes").value,
+    exercises: collectExercises(),
   };
-  const r = await fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (r.ok) { toast("Dag opgeslagen"); await load(); } else { toast("Opslaan mislukt", true); }
+}
+
+function setStatus(state) {
+  const el = $("saveStatus"), t = $("saveText");
+  const map = {
+    saving: ["save-status saving", "Opslaan…"],
+    saved: ["save-status saved", "Opgeslagen ✓"],
+    error: ["save-status error", "Opslaan mislukt — check verbinding"],
+    idle: ["save-status", "Alles wordt automatisch opgeslagen"],
+  };
+  const [cls, txt] = map[state] || map.idle;
+  el.className = cls; t.textContent = txt;
+}
+
+let saveTimer;
+function scheduleSave() {
+  if (loadingForm) return;
+  setStatus("saving");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(autoSave, 700);
+}
+
+async function autoSave() {
+  try {
+    const r = await fetch("/api/log", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(collectForm()),
+    });
+    if (!r.ok) throw new Error();
+    const st = await fetch("/api/state");
+    STATE = await st.json();
+    renderHero(); renderChart(); renderWeek(); renderHistory();
+    setStatus("saved");
+  } catch {
+    setStatus("error");
+  }
 }
 
 function mdToHtml(md) {
@@ -546,9 +675,11 @@ async function saveSettings() {
   renderAll(); toast("Targets opgeslagen");
 }
 
-["fProtein","fFat","fCarbs","fKcal"].forEach(id => $(id).addEventListener("input", livePreview));
+["fWeight","fKcal","fProtein","fFat","fCarbs","fWaist","fTraining","fNotes"].forEach((id) =>
+  $(id).addEventListener("input", scheduleSave));
+["fProtein","fFat","fCarbs","fKcal"].forEach((id) => $(id).addEventListener("input", livePreview));
 $("fDate").addEventListener("change", () => loadDay($("fDate").value));
-$("saveBtn").onclick = save;
+$("addExBtn").onclick = () => { addExercise(); };
 $("fbBtn").onclick = feedback;
 $("copyBtn").onclick = copyData;
 $("setBtn").onclick = saveSettings;

@@ -113,7 +113,9 @@ app.post("/api/log", (req, res) => {
     date: b.date,
     weight: num(b.weight), kcal: num(b.kcal), protein: num(b.protein),
     fat: num(b.fat), carbs: num(b.carbs), waist: num(b.waist),
-    training: b.training || null, notes: b.notes || null,
+    training: b.training || null,
+    exercises: Array.isArray(b.exercises) ? b.exercises : [],
+    notes: b.notes || null,
     updated_at: new Date().toISOString(),
   };
   saveDB(DB);
@@ -139,15 +141,19 @@ app.get("/api/summary", (req, res) => res.json(buildWeeklySummary()));
 // ---- Export naar CSV (opent in Excel) ----
 app.get("/api/export.csv", (req, res) => {
   const rows = logsAscending();
-  const headers = ["datum", "gewicht_kg", "calorieen", "eiwit_g", "vet_g", "koolhydraten_g", "buik_cm", "training", "notitie"];
+  const headers = ["datum", "gewicht_kg", "calorieen", "eiwit_g", "vet_g", "koolhydraten_g", "buik_cm", "training", "oefeningen", "notitie"];
   const esc = (v) => {
     if (v == null) return "";
     const s = String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
+  const exText = (ex) =>
+    (ex || [])
+      .map((e) => `${e.name || ""} ${(e.sets || []).map((s) => `${s.weight ?? ""}x${s.reps ?? ""}`).join("/")}`.trim())
+      .join("; ");
   const lines = [headers.join(",")];
   for (const l of rows) {
-    lines.push([l.date, l.weight, l.kcal, l.protein, l.fat, l.carbs, l.waist, l.training, l.notes].map(esc).join(","));
+    lines.push([l.date, l.weight, l.kcal, l.protein, l.fat, l.carbs, l.waist, l.training, exText(l.exercises), l.notes].map(esc).join(","));
   }
   const csv = "\uFEFF" + lines.join("\r\n"); // BOM zodat Excel accenten goed leest
   const today = new Date().toISOString().slice(0, 10);
