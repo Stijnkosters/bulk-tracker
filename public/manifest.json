@@ -1,0 +1,18 @@
+{
+  "name": "Lean Bulk Console",
+  "short_name": "Bulk",
+  "description": "Dagelijkse macro- en gewichtstracker met AI-weekfeedback",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0E1116",
+  "theme_color": "#0E1116",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

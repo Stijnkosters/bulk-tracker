@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Lean Bulk Console</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0E1116" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Bulk" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0E1116;
+    --surface: #161B22;
+    --surface-2: #1C232C;
+    --line: #262E38;
+    --text: #E6EAF0;
+    --muted: #8A95A3;
+    --dim: #5A6470;
+    --accent: #FF7847;       /* signaal: interactie */
+    --good: #34D399;         /* op target */
+    --over: #F87171;         /* over target */
+    --under: #FBBF24;        /* onder target */
+    --radius: 14px;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+    --display: "Space Grotesk", system-ui, sans-serif;
+    --body: "Inter", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); }
+  body {
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+    max-width: 640px; margin: 0 auto; -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: var(--display); margin: 0; letter-spacing: -0.02em; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 2px 20px; }
+  header .brand { font-family: var(--display); font-weight: 700; font-size: 19px; letter-spacing: -0.03em; }
+  header .brand span { color: var(--accent); }
+  header .date { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; }
+  .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--dim); font-weight: 600; margin-bottom: 14px; }
+
+  /* HERO */
+  .hero { background: linear-gradient(160deg, #1A2129 0%, #141A21 100%); }
+  .hero .verdict { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; }
+  .verdict.on { color: var(--good); background: rgba(52,211,153,.1); }
+  .verdict.fast { color: var(--over); background: rgba(248,113,113,.1); }
+  .verdict.slow { color: var(--under); background: rgba(251,191,36,.1); }
+  .verdict.none { color: var(--muted); background: rgba(138,149,163,.1); }
+  .verdict .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .rate { display: flex; align-items: flex-end; gap: 10px; margin: 16px 0 4px; }
+  .rate .big { font-family: var(--mono); font-weight: 600; font-size: 52px; line-height: .9; letter-spacing: -0.04em; }
+  .rate .unit { font-family: var(--mono); color: var(--muted); font-size: 15px; padding-bottom: 6px; }
+  .hero .sub { font-size: 13px; color: var(--muted); }
+  .hero-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; margin-top: 18px; background: var(--line); border-radius: 10px; overflow: hidden; }
+  .hero-stats div { background: var(--surface); padding: 12px 10px; }
+  .hero-stats .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin-bottom: 5px; }
+  .hero-stats .v { font-family: var(--mono); font-size: 18px; font-weight: 500; }
+
+  /* MACRO BARS */
+  .macro { margin-bottom: 13px; }
+  .macro:last-child { margin-bottom: 0; }
+  .macro .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .macro .name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .macro .vals { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .macro .vals b { color: var(--text); font-weight: 600; }
+  .track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .35s cubic-bezier(.22,1,.36,1), background .2s; width: 0; }
+  .fill.good { background: var(--good); }
+  .fill.over { background: var(--over); }
+  .fill.under { background: var(--accent); }
+
+  /* FORM */
+  label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 6px 2px; font-weight: 600; }
+  input, textarea {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 11px; padding: 14px; font-size: 16px; font-family: var(--mono); outline: none;
+    transition: border-color .15s;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { font-family: var(--body); resize: vertical; min-height: 56px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+
+  button { font-family: var(--display); cursor: pointer; border: none; }
+  .btn-primary {
+    width: 100%; background: var(--accent); color: #1A0E08; font-weight: 700; font-size: 16px;
+    padding: 16px; border-radius: 12px; letter-spacing: -0.01em; margin-top: 4px;
+    transition: transform .08s, filter .15s;
+  }
+  .btn-primary:active { transform: scale(.985); filter: brightness(1.05); }
+  .btn-ghost {
+    width: 100%; background: transparent; color: var(--muted); border: 1px solid var(--line);
+    font-weight: 600; font-size: 14px; padding: 13px; border-radius: 11px;
+  }
+  .btn-ghost:active { background: var(--surface-2); }
+  .btn-row { display: grid; gap: 10px; }
+
+  /* FEEDBACK */
+  .fb { font-size: 14.5px; line-height: 1.6; color: var(--text); }
+  .fb h2, .fb h3 { font-size: 15px; margin: 16px 0 8px; color: var(--text); }
+  .fb ul { margin: 8px 0; padding-left: 18px; }
+  .fb li { margin: 5px 0; }
+  .fb strong { color: #fff; }
+  .fb p { margin: 8px 0; }
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.25); border-top-color: #1A0E08; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* HISTORY */
+  .hist-row { display: flex; align-items: center; gap: 12px; padding: 13px 2px; border-bottom: 1px solid var(--line); }
+  .hist-row:last-child { border-bottom: none; }
+  .hist-row .hd { font-family: var(--mono); font-size: 13px; color: var(--muted); width: 52px; flex-shrink: 0; }
+  .hist-row .hm { flex: 1; font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+  .hist-row .hw { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
+  .hist-row button { background: none; color: var(--dim); font-family: var(--body); font-size: 12px; padding: 4px; }
+
+  details { margin-bottom: 14px; }
+  summary { list-style: none; cursor: pointer; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); font-family: var(--display); font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  summary::-webkit-details-marker { display: none; }
+  summary .chev { color: var(--dim); transition: transform .2s; }
+  details[open] summary { border-radius: var(--radius) var(--radius) 0 0; border-bottom: none; }
+  details[open] summary .chev { transform: rotate(180deg); }
+  details .card { border-radius: 0 0 var(--radius) var(--radius); margin-bottom: 0; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); background: var(--good); color: #06281C; font-weight: 600; font-size: 14px; padding: 12px 20px; border-radius: 999px; opacity: 0; transition: all .25s; pointer-events: none; font-family: var(--display); z-index: 50; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: var(--over); color: #2A0A0A; }
+  .empty { color: var(--dim); font-size: 13px; text-align: center; padding: 14px 0; }
+
+  /* CHART */
+  .chart-svg { width: 100%; height: 168px; display: block; overflow: visible; }
+  .chart-svg .grid { stroke: var(--line); stroke-width: 1; }
+  .chart-svg .axis-label { fill: var(--dim); font-family: var(--mono); font-size: 10px; }
+  .chart-svg .raw-dot { fill: var(--muted); opacity: .55; }
+  .chart-svg .trend-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  .chart-svg .trend-area { fill: url(#trendFade); opacity: .12; }
+  .chart-legend { display: flex; gap: 18px; margin-top: 12px; font-size: 11px; color: var(--muted); font-family: var(--body); }
+  .chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+  .chart-legend .dot-raw { background: var(--muted); opacity: .55; }
+  .chart-legend .dot-trend { background: var(--accent); border-radius: 2px; width: 14px; height: 3px; vertical-align: 2px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">LEAN<span>·</span>BULK</div>
+    <div class="date num" id="headerDate"></div>
+  </header>
+
+  <!-- HERO -->
+  <div class="card hero">
+    <div class="card-label" style="margin-bottom:0">Weektempo</div>
+    <div class="rate">
+      <div class="big num" id="rateBig">—</div>
+      <div class="unit">kg / week</div>
+    </div>
+    <div style="margin:10px 0 2px"><span class="verdict none" id="verdict"><span class="dot"></span><span id="verdictText">Nog geen data</span></span></div>
+    <div class="sub" id="heroSub">Log minstens 8 dagen gewicht voor een betrouwbaar tempo.</div>
+    <div class="hero-stats">
+      <div><div class="k">7-d gemiddeld</div><div class="v num" id="statAvg">—</div></div>
+      <div><div class="k">Sinds start</div><div class="v num" id="statTotal">—</div></div>
+      <div><div class="k">Tot doel</div><div class="v num" id="statGoal">—</div></div>
+    </div>
+  </div>
+
+  <!-- WEIGHT CHART -->
+  <div class="card">
+    <div class="card-label">Gewichtsverloop</div>
+    <div id="chartBox"><div class="empty">Log een paar dagen gewicht om de grafiek te zien.</div></div>
+    <div class="chart-legend" id="chartLegend" style="display:none">
+      <span><i class="dot-raw"></i> dagelijks</span>
+      <span><i class="dot-trend"></i> 7-daagse trend</span>
+    </div>
+  </div>
+
+  <!-- TODAY LOG -->
+  <div class="card">
+    <div class="card-label">Vandaag loggen</div>
+    <div class="field">
+      <label for="fDate">Datum</label>
+      <input type="date" id="fDate" />
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="fWeight">Gewicht (kg)</label><input type="number" inputmode="decimal" step="0.1" id="fWeight" placeholder="72.0" /></div>
+      <div class="field"><label for="fKcal">Calorieën</label><input type="number" inputmode="numeric" id="fKcal" placeholder="3100" /></div>
+    </div>
+    <div class="grid4">
+      <div class="field"><label for="fProtein">Eiwit (g)</label><input type="number" inputmode="numeric" id="fProtein" placeholder="160" /></div>
+      <div class="field"><label for="fFat">Vet (g)</label><input type="number" inputmode="numeric" id="fFat" placeholder="95" /></div>
+      <div class="field"><label for="fCarbs">Koolhydraten (g)</label><input type="number" inputmode="numeric" id="fCarbs" placeholder="400" /></div>
+      <div class="field"><label for="fWaist">Buik (cm)</label><input type="number" inputmode="decimal" step="0.1" id="fWaist" placeholder="optioneel" /></div>
+    </div>
+    <div class="field"><label for="fTraining">Training</label><input type="text" id="fTraining" style="font-family:var(--body)" placeholder="Push / Pull / Legs ..." /></div>
+    <div class="field"><label for="fNotes">Notitie</label><textarea id="fNotes" placeholder="Hoe voelde de dag / training?"></textarea></div>
+
+    <!-- live macro preview -->
+    <div style="margin:18px 0 16px">
+      <div class="macro"><div class="top"><span class="name">Eiwit</span><span class="vals"><b id="pNow">0</b> / <span id="pTar">160</span> g</span></div><div class="track"><div class="fill" id="pBar"></div></div></div>
+      <div class="macro"><div class="top"><span class="name">Vet</span><span class="vals"><b id="fNow">0</b> / <span id="fTar">95</span> g</span></div><div class="track"><div class="fill" id="fBar"></div></div></div>
+      <div class="macro"><div class="top"><span class="name">Koolhydraten</span><span class="vals"><b id="cNow">0</b> / <span id="cTar">400</span> g</span></div><div class="track"><div class="fill" id="cBar"></div></div></div>
+      <div class="macro"><div class="top"><span class="name">Calorieën</span><span class="vals"><b id="kNow">0</b> / <span id="kTar">3100</span></span></div><div class="track"><div class="fill" id="kBar"></div></div></div>
+    </div>
+    <button class="btn-primary" id="saveBtn">Dag opslaan</button>
+  </div>
+
+  <!-- WEEK -->
+  <div class="card">
+    <div class="card-label">Week gemiddeld · <span id="daysLogged">0</span>/7 dagen</div>
+    <div class="macro"><div class="top"><span class="name">Eiwit</span><span class="vals"><b id="wpNow">—</b> / <span id="wpTar">160</span> g</span></div><div class="track"><div class="fill" id="wpBar"></div></div></div>
+    <div class="macro"><div class="top"><span class="name">Vet</span><span class="vals"><b id="wfNow">—</b> / <span id="wfTar">95</span> g</span></div><div class="track"><div class="fill" id="wfBar"></div></div></div>
+    <div class="macro"><div class="top"><span class="name">Koolhydraten</span><span class="vals"><b id="wcNow">—</b> / <span id="wcTar">400</span> g</span></div><div class="track"><div class="fill" id="wcBar"></div></div></div>
+    <div class="macro"><div class="top"><span class="name">Calorieën</span><span class="vals"><b id="wkNow">—</b> / <span id="wkTar">3100</span></span></div><div class="track"><div class="fill" id="wkBar"></div></div></div>
+  </div>
+
+  <!-- AI FEEDBACK -->
+  <div class="card">
+    <div class="card-label">Weekfeedback</div>
+    <div class="fb" id="fbBox"><div class="empty">Genereer feedback op basis van je week, of kopieer je data naar Claude.</div></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn-primary" id="fbBtn">Genereer weekfeedback</button>
+      <button class="btn-ghost" id="copyBtn">Kopieer weekdata</button>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="card">
+    <div class="card-label">Geschiedenis</div>
+    <div id="histList"><div class="empty">Nog niks gelogd.</div></div>
+    <a href="/api/export.csv" id="exportBtn" class="btn-ghost" style="display:block;text-align:center;text-decoration:none;margin-top:14px">Exporteer naar Excel (CSV)</a>
+  </div>
+
+  <!-- SETTINGS -->
+  <details>
+    <summary>Targets aanpassen <span class="chev">▾</span></summary>
+    <div class="card">
+      <div class="grid2">
+        <div class="field"><label>Calorieën</label><input type="number" id="sKcal" /></div>
+        <div class="field"><label>Eiwit (g)</label><input type="number" id="sProtein" /></div>
+        <div class="field"><label>Vet (g)</label><input type="number" id="sFat" /></div>
+        <div class="field"><label>Koolhydraten (g)</label><input type="number" id="sCarbs" /></div>
+        <div class="field"><label>Startgewicht</label><input type="number" step="0.1" id="sStart" /></div>
+        <div class="field"><label>Doelgewicht</label><input type="number" step="0.1" id="sGoal" /></div>
+      </div>
+      <button class="btn-primary" id="setBtn" style="margin-top:8px">Targets opslaan</button>
+    </div>
+  </details>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const todayStr = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD lokaal
+let STATE = { settings: {}, logs: [] };
+
+function toast(msg, err = false) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (err ? " err" : "");
+  setTimeout(() => (t.className = "toast"), 2200);
+}
+
+function barClass(now, target, type) {
+  // calorieën/eiwit: onder = geel, ~op = groen, fors over = rood
+  // vet: over = rood (jij wil vet niet over)
+  const pct = target ? now / target : 0;
+  if (type === "fat") {
+    if (now === 0) return "under";
+    if (pct > 1.1) return "over";
+    return "good";
+  }
+  if (now === 0) return "under";
+  if (pct > 1.15) return "over";
+  if (pct >= 0.9) return "good";
+  return "under";
+}
+
+function setBar(barId, now, target, type) {
+  const el = $(barId);
+  const pct = target ? Math.min((now / target) * 100, 100) : 0;
+  el.style.width = pct + "%";
+  el.className = "fill " + barClass(now, target, type);
+}
+
+function renderTargets() {
+  const s = STATE.settings;
+  $("pTar").textContent = s.target_protein; $("fTar").textContent = s.target_fat;
+  $("cTar").textContent = s.target_carbs; $("kTar").textContent = s.target_kcal;
+  $("wpTar").textContent = s.target_protein; $("wfTar").textContent = s.target_fat;
+  $("wcTar").textContent = s.target_carbs; $("wkTar").textContent = s.target_kcal;
+  $("sKcal").value = s.target_kcal; $("sProtein").value = s.target_protein;
+  $("sFat").value = s.target_fat; $("sCarbs").value = s.target_carbs;
+  $("sStart").value = s.start_weight; $("sGoal").value = s.goal_weight;
+}
+
+function livePreview() {
+  const s = STATE.settings;
+  const p = +$("fProtein").value || 0, f = +$("fFat").value || 0;
+  const c = +$("fCarbs").value || 0, k = +$("fKcal").value || 0;
+  $("pNow").textContent = p; $("fNow").textContent = f; $("cNow").textContent = c; $("kNow").textContent = k;
+  setBar("pBar", p, s.target_protein, "protein");
+  setBar("fBar", f, s.target_fat, "fat");
+  setBar("cBar", c, s.target_carbs, "carbs");
+  setBar("kBar", k, s.target_kcal, "kcal");
+}
+
+function loadDay(date) {
+  const log = STATE.logs.find((l) => l.date === date);
+  $("fDate").value = date;
+  const set = (id, v) => ($(id).value = v == null ? "" : v);
+  set("fWeight", log?.weight); set("fKcal", log?.kcal); set("fProtein", log?.protein);
+  set("fFat", log?.fat); set("fCarbs", log?.carbs); set("fWaist", log?.waist);
+  $("fTraining").value = log?.training || ""; $("fNotes").value = log?.notes || "";
+  livePreview();
+}
+
+function rollingAvg(logsAsc, endIdx, win = 7) {
+  const vals = [];
+  for (let i = endIdx; i >= 0 && vals.length < win; i--) {
+    if (typeof logsAsc[i]?.weight === "number") vals.push(logsAsc[i].weight);
+  }
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+
+function weeklyRateTrend(asc) {
+  const pts = asc.filter((l) => typeof l.weight === "number").slice(-14);
+  if (pts.length < 5) return null;
+  const x0 = new Date(pts[0].date).getTime();
+  const xs = pts.map((p) => (new Date(p.date).getTime() - x0) / 86400000);
+  const ys = pts.map((p) => p.weight);
+  const n = pts.length;
+  const sx = xs.reduce((a, b) => a + b, 0), sy = ys.reduce((a, b) => a + b, 0);
+  const sxx = xs.reduce((a, b) => a + b * b, 0);
+  const sxy = xs.reduce((a, b, i) => a + b * ys[i], 0);
+  const denom = n * sxx - sx * sx;
+  return denom === 0 ? null : ((n * sxy - sx * sy) / denom) * 7;
+}
+
+function renderHero() {
+  const s = STATE.settings;
+  const asc = [...STATE.logs].filter((l) => l.weight != null).sort((a, b) => a.date.localeCompare(b.date));
+  const cur = asc.length ? rollingAvg(asc, asc.length - 1) : null;
+  const rate = weeklyRateTrend(asc);
+
+  $("rateBig").textContent = rate == null ? "—" : (rate > 0 ? "+" : "") + rate.toFixed(2);
+  $("statAvg").textContent = cur == null ? "—" : cur.toFixed(1) + " kg";
+  const latest = asc.length ? asc[asc.length - 1].weight : null;
+  $("statTotal").textContent = latest == null ? "—" : ((latest - s.start_weight >= 0 ? "+" : "") + (latest - s.start_weight).toFixed(1) + " kg");
+  $("statGoal").textContent = latest == null ? "—" : (s.goal_weight - latest).toFixed(1) + " kg";
+
+  const v = $("verdict"), vt = $("verdictText"), sub = $("heroSub");
+  if (rate == null) {
+    v.className = "verdict none"; vt.textContent = "Nog geen tempo";
+    sub.textContent = "Log minstens 5 dagen gewicht voor een betrouwbaar tempo.";
+  } else if (rate < s.weekly_rate_min) {
+    v.className = "verdict slow"; vt.textContent = "Te traag";
+    sub.textContent = "Onder streeftempo. Overweeg +150 kcal koolhydraten per dag.";
+  } else if (rate > s.weekly_rate_max) {
+    v.className = "verdict fast"; vt.textContent = "Te snel";
+    sub.textContent = "Boven streeftempo — risico op vet. Overweeg −150 kcal.";
+  } else {
+    v.className = "verdict on"; vt.textContent = "Op koers";
+    sub.textContent = "Tempo zit in de sweet spot. Houd dit vast.";
+  }
+}
+
+function renderWeek() {
+  const s = STATE.settings;
+  const today = new Date();
+  const last7 = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today); d.setDate(today.getDate() - i);
+    last7.push(d.toLocaleDateString("sv-SE"));
+  }
+  const days = STATE.logs.filter((l) => last7.includes(l.date) && l.kcal != null);
+  $("daysLogged").textContent = days.length;
+  const avg = (key) => days.length ? days.reduce((a, b) => a + (b[key] || 0), 0) / days.length : null;
+  const set = (id, barId, key, target, type) => {
+    const v = avg(key);
+    $(id).textContent = v == null ? "—" : Math.round(v);
+    setBar(barId, v || 0, target, type);
+  };
+  set("wpNow", "wpBar", "protein", s.target_protein, "protein");
+  set("wfNow", "wfBar", "fat", s.target_fat, "fat");
+  set("wcNow", "wcBar", "carbs", s.target_carbs, "carbs");
+  set("wkNow", "wkBar", "kcal", s.target_kcal, "kcal");
+}
+
+function renderHistory() {
+  const box = $("histList");
+  if (!STATE.logs.length) { box.innerHTML = '<div class="empty">Nog niks gelogd.</div>'; return; }
+  box.innerHTML = STATE.logs.slice(0, 14).map((l) => {
+    const d = l.date.slice(8, 10) + "/" + l.date.slice(5, 7);
+    const macros = l.kcal != null ? `${Math.round(l.kcal)} kcal · E${l.protein||0} V${l.fat||0} K${l.carbs||0}` : "—";
+    return `<div class="hist-row">
+      <span class="hd">${d}</span>
+      <span class="hm">${macros}</span>
+      <span class="hw">${l.weight != null ? l.weight + "kg" : ""}</span>
+      <button data-edit="${l.date}">bewerk</button>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-edit]").forEach((b) =>
+    b.onclick = () => { loadDay(b.dataset.edit); window.scrollTo({ top: 0, behavior: "smooth" }); });
+}
+
+function renderChart() {
+  const box = $("chartBox"), legend = $("chartLegend");
+  const asc = [...STATE.logs].filter((l) => typeof l.weight === "number").sort((a, b) => a.date.localeCompare(b.date));
+  if (asc.length < 2) {
+    box.innerHTML = '<div class="empty">Log een paar dagen gewicht om de grafiek te zien.</div>';
+    legend.style.display = "none";
+    return;
+  }
+  // 7-daagse trend per punt
+  const trend = asc.map((_, i) => {
+    const vals = [];
+    for (let j = i; j >= 0 && vals.length < 7; j--) vals.push(asc[j].weight);
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  });
+
+  const W = 600, H = 168, padX = 36, padTop = 14, padBot = 22;
+  const t0 = new Date(asc[0].date).getTime();
+  const t1 = new Date(asc[asc.length - 1].date).getTime();
+  const span = t1 - t0 || 1;
+  const xs = asc.map((l) => padX + ((new Date(l.date).getTime() - t0) / span) * (W - padX - 8));
+
+  const allY = asc.map((l) => l.weight).concat(trend);
+  let yMin = Math.min(...allY), yMax = Math.max(...allY);
+  const pad = Math.max((yMax - yMin) * 0.25, 0.4);
+  yMin -= pad; yMax += pad;
+  const yPix = (v) => padTop + (1 - (v - yMin) / (yMax - yMin)) * (H - padTop - padBot);
+
+  const trendPts = trend.map((v, i) => `${xs[i].toFixed(1)},${yPix(v).toFixed(1)}`);
+  const trendPath = "M" + trendPts.join(" L");
+  const areaPath = `${trendPath} L${xs[xs.length - 1].toFixed(1)},${(H - padBot).toFixed(1)} L${xs[0].toFixed(1)},${(H - padBot).toFixed(1)} Z`;
+
+  const rawDots = asc.map((l, i) => `<circle class="raw-dot" cx="${xs[i].toFixed(1)}" cy="${yPix(l.weight).toFixed(1)}" r="2.5"/>`).join("");
+
+  // y-gridlijnen (3) + labels
+  const ticks = [yMax, (yMax + yMin) / 2, yMin];
+  const grid = ticks.map((v) => {
+    const y = yPix(v).toFixed(1);
+    return `<line class="grid" x1="${padX}" y1="${y}" x2="${W - 8}" y2="${y}"/><text class="axis-label" x="2" y="${(+y + 3).toFixed(1)}">${v.toFixed(1)}</text>`;
+  }).join("");
+
+  // x-labels: eerste en laatste datum
+  const dlabel = (d) => d.slice(8, 10) + "/" + d.slice(5, 7);
+  const xlabels = `<text class="axis-label" x="${padX}" y="${H - 4}">${dlabel(asc[0].date)}</text>` +
+    `<text class="axis-label" x="${W - 8}" y="${H - 4}" text-anchor="end">${dlabel(asc[asc.length - 1].date)}</text>`;
+
+  box.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <defs><linearGradient id="trendFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--accent)"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${grid}<path class="trend-area" d="${areaPath}"/><path class="trend-line" d="${trendPath}"/>${rawDots}${xlabels}
+  </svg>`;
+  legend.style.display = "flex";
+}
+
+function renderAll() { renderTargets(); renderHero(); renderChart(); renderWeek(); renderHistory(); livePreview(); }
+
+async function load() {
+  const r = await fetch("/api/state");
+  STATE = await r.json();
+  if (!$("fDate").value) loadDay(todayStr());
+  renderAll();
+}
+
+async function save() {
+  const body = {
+    date: $("fDate").value || todayStr(),
+    weight: $("fWeight").value, kcal: $("fKcal").value, protein: $("fProtein").value,
+    fat: $("fFat").value, carbs: $("fCarbs").value, waist: $("fWaist").value,
+    training: $("fTraining").value, notes: $("fNotes").value,
+  };
+  const r = await fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (r.ok) { toast("Dag opgeslagen"); await load(); } else { toast("Opslaan mislukt", true); }
+}
+
+function mdToHtml(md) {
+  const lines = md.split("\n"); let html = "", inList = false;
+  const inline = (t) => t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>");
+  for (let line of lines) {
+    if (/^#{1,3}\s/.test(line)) { if (inList) { html += "</ul>"; inList = false; } html += `<h3>${inline(line.replace(/^#+\s/, ""))}</h3>`; }
+    else if (/^[-*]\s/.test(line)) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(line.replace(/^[-*]\s/, ""))}</li>`; }
+    else if (line.trim() === "") { if (inList) { html += "</ul>"; inList = false; } }
+    else { if (inList) { html += "</ul>"; inList = false; } html += `<p>${inline(line)}</p>`; }
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+async function feedback() {
+  const btn = $("fbBtn");
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/feedback", { method: "POST" });
+    const data = await r.json();
+    if (r.ok && data.feedback) {
+      $("fbBox").innerHTML = mdToHtml(data.feedback);
+    } else {
+      $("fbBox").innerHTML = `<div class="empty">${data.error || "Kon geen feedback ophalen."}</div>`;
+      toast(data.error ? "Geen API-key — kopieer data" : "Mislukt", true);
+    }
+  } catch (e) { toast("Verbinding mislukt", true); }
+  btn.innerHTML = "Genereer weekfeedback";
+  btn.disabled = false;
+}
+
+async function copyData() {
+  const r = await fetch("/api/summary");
+  const s = await r.json();
+  const a = s.averages, w = s.weight, st = s.settings;
+  const rnd = (v, d=0) => v == null ? "—" : Number(v).toFixed(d);
+  const txt =
+`Mijn lean-bulk weekdata (22 jr, 1.86 m, doel ${st.goal_weight}kg lean):
+Targets: ${st.target_kcal} kcal / E${st.target_protein} V${st.target_fat} K${st.target_carbs}
+Gelogd: ${s.daysLogged}/7 dagen
+Gem. kcal: ${rnd(a.kcal)} | eiwit ${rnd(a.protein)}g | vet ${rnd(a.fat)}g | koolh ${rnd(a.carbs)}g
+Gewicht 7-d gem: ${rnd(w.sevenDayAvg,1)}kg | weektempo: ${w.weeklyRate==null?"—":(w.weeklyRate>0?"+":"")+rnd(w.weeklyRate,2)}kg
+Dagen:
+${s.days.map(d=>`${d.date}: ${d.kcal!=null?`${rnd(d.kcal)}kcal E${rnd(d.protein)}/V${rnd(d.fat)}/K${rnd(d.carbs)}`:"niet gelogd"}${d.weight?`, ${d.weight}kg`:""}`).join("\n")}
+
+Geef me je weekfeedback en concrete acties voor komende week.`;
+  try { await navigator.clipboard.writeText(txt); toast("Weekdata gekopieerd"); }
+  catch { prompt("Kopieer handmatig:", txt); }
+}
+
+async function saveSettings() {
+  const body = {
+    target_kcal: $("sKcal").value, target_protein: $("sProtein").value,
+    target_fat: $("sFat").value, target_carbs: $("sCarbs").value,
+    start_weight: $("sStart").value, goal_weight: $("sGoal").value,
+  };
+  const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const data = await r.json();
+  STATE.settings = data.settings;
+  renderAll(); toast("Targets opgeslagen");
+}
+
+["fProtein","fFat","fCarbs","fKcal"].forEach(id => $(id).addEventListener("input", livePreview));
+$("fDate").addEventListener("change", () => loadDay($("fDate").value));
+$("saveBtn").onclick = save;
+$("fbBtn").onclick = feedback;
+$("copyBtn").onclick = copyData;
+$("setBtn").onclick = saveSettings;
+$("headerDate").textContent = new Date().toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" });
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+load();
+</script>
+</body>
+</html>
