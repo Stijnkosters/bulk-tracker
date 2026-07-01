@@ -159,6 +159,18 @@
   .set-add { background: none; color: var(--muted); border: none; font-family: var(--display); font-weight: 600; font-size: 12px; padding: 4px 2px; text-align: left; }
   .set-add:active { color: var(--accent); }
 
+  /* TEMPLATE SELECT + MANAGER */
+  .tpl-select { width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--text); border-radius: 11px; padding: 13px; font-size: 15px; font-family: var(--body); margin-bottom: 12px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238A95A3' d='M6 8L0 0h12z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; }
+  .tpl-select:focus { border-color: var(--accent); outline: none; }
+  .tpl-row { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px; }
+  .tpl-row .tpl-info { flex: 1; }
+  .tpl-row .tpl-nm { font-family: var(--display); font-weight: 600; font-size: 14px; }
+  .tpl-row .tpl-ex { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+  .tpl-row button { background: none; font-family: var(--body); font-size: 12px; padding: 6px 8px; border-radius: 8px; }
+  .tpl-row .tpl-edit { color: var(--accent); }
+  .tpl-row .tpl-del { color: var(--dim); }
+  .tpl-name-input { font-family: var(--body) !important; margin-bottom: 10px; }
+
   /* CHART */
   .chart-svg { width: 100%; height: 168px; display: block; overflow: visible; }
   .chart-svg .grid { stroke: var(--line); stroke-width: 1; }
@@ -225,6 +237,7 @@
 
     <div class="field">
       <label>Oefeningen · sets &amp; reps</label>
+      <select id="tplSelect" class="tpl-select"><option value="">— Laad trainingsdag —</option></select>
       <div id="exList"></div>
       <button type="button" class="btn-add" id="addExBtn">+ Oefening</button>
     </div>
@@ -283,12 +296,30 @@
     </div>
   </details>
 
+  <!-- TRAININGSSCHEMA'S -->
+  <details>
+    <summary>Trainingsschema's beheren <span class="chev">▾</span></summary>
+    <div class="card">
+      <div id="tplList"></div>
+      <button type="button" class="btn-add" id="tplNewBtn">+ Nieuw schema</button>
+      <div id="tplEditor" style="display:none; margin-top:14px">
+        <input type="text" id="tplName" class="tpl-name-input" placeholder="Naam (bijv. Push)" />
+        <div id="tplExInputs"></div>
+        <button type="button" class="btn-add" id="tplAddExBtn">+ Oefening</button>
+        <div class="btn-row" style="margin-top:12px">
+          <button type="button" class="btn-primary" id="tplSaveBtn">Schema opslaan</button>
+          <button type="button" class="btn-ghost" id="tplCancelBtn">Annuleren</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
   <div class="toast" id="toast"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const todayStr = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD lokaal
-let STATE = { settings: {}, logs: [] };
+let STATE = { settings: {}, logs: [], templates: [] };
 
 function toast(msg, err = false) {
   const t = $("toast");
@@ -558,7 +589,7 @@ function renderChart() {
   legend.style.display = "flex";
 }
 
-function renderAll() { renderTargets(); renderHero(); renderChart(); renderWeek(); renderHistory(); livePreview(); }
+function renderAll() { renderTargets(); renderHero(); renderChart(); renderWeek(); renderHistory(); renderTemplates(); livePreview(); }
 
 async function load() {
   const r = await fetch("/api/state");
@@ -683,6 +714,92 @@ $("addExBtn").onclick = () => { addExercise(); };
 $("fbBtn").onclick = feedback;
 $("copyBtn").onclick = copyData;
 $("setBtn").onclick = saveSettings;
+
+// ---- Trainingsschema's ----
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let editingTplId = null;
+
+function renderTemplates() {
+  const tpls = STATE.templates || [];
+  const sel = $("tplSelect");
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">— Laad trainingsdag —</option>' +
+    tpls.map((t) => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+  sel.value = keep;
+  const list = $("tplList");
+  if (!tpls.length) { list.innerHTML = '<div class="empty">Nog geen schema. Maak er één aan met de knop hieronder.</div>'; return; }
+  list.innerHTML = tpls.map((t) => `
+    <div class="tpl-row">
+      <div class="tpl-info">
+        <div class="tpl-nm">${escHtml(t.name)}</div>
+        <div class="tpl-ex">${(t.exercises || []).map(escHtml).join(" · ") || "geen oefeningen"}</div>
+      </div>
+      <button class="tpl-edit" data-edit="${t.id}">bewerk</button>
+      <button class="tpl-del" data-del="${t.id}">verwijder</button>
+    </div>`).join("");
+  list.querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => openTplEditor(tpls.find((t) => t.id === b.dataset.edit))));
+  list.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => deleteTemplate(b.dataset.del)));
+}
+
+function openTplEditor(tpl) {
+  editingTplId = tpl?.id || null;
+  $("tplName").value = tpl?.name || "";
+  $("tplExInputs").innerHTML = "";
+  const exs = tpl?.exercises?.length ? tpl.exercises : [""];
+  exs.forEach((name) => addTplExInput(name));
+  $("tplEditor").style.display = "block";
+}
+
+function addTplExInput(value) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:8px";
+  row.innerHTML = `<input type="text" class="tpl-ex-name" style="font-family:var(--body)!important" placeholder="Oefening (bijv. Bench press)" />
+    <button type="button" class="set-del" aria-label="Verwijder">✕</button>`;
+  $("tplExInputs").appendChild(row);
+  row.querySelector(".tpl-ex-name").value = value || "";
+  row.querySelector(".set-del").onclick = () => row.remove();
+}
+
+async function saveTemplate() {
+  const name = $("tplName").value.trim();
+  if (!name) { toast("Geef het schema een naam", true); return; }
+  const exercises = [...document.querySelectorAll("#tplExInputs .tpl-ex-name")].map((i) => i.value.trim()).filter(Boolean);
+  const r = await fetch("/api/templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: editingTplId, name, exercises }) });
+  const data = await r.json();
+  if (r.ok) {
+    STATE.templates = data.templates;
+    renderTemplates();
+    $("tplEditor").style.display = "none";
+    editingTplId = null;
+    toast("Schema opgeslagen");
+  } else toast(data.error || "Mislukt", true);
+}
+
+async function deleteTemplate(id) {
+  if (!confirm("Dit schema verwijderen?")) return;
+  const r = await fetch("/api/templates/" + id, { method: "DELETE" });
+  const data = await r.json();
+  if (r.ok) { STATE.templates = data.templates; renderTemplates(); toast("Schema verwijderd"); }
+}
+
+function loadTemplateIntoDay(id) {
+  const tpl = (STATE.templates || []).find((t) => t.id === id);
+  if (!tpl) return;
+  const hasData = [...document.querySelectorAll("#exList .set-kg, #exList .set-reps")].some((i) => i.value !== "");
+  if (hasData && !confirm(`Bestaande oefeningen vervangen door "${tpl.name}"?`)) { $("tplSelect").value = ""; return; }
+  $("exList").innerHTML = "";
+  if (tpl.exercises.length) tpl.exercises.forEach((name) => addExercise({ name, sets: [null] }));
+  else addExercise();
+  if (tpl.name) $("fTraining").value = tpl.name;
+  $("tplSelect").value = "";
+  scheduleSave();
+}
+
+$("tplSelect").addEventListener("change", () => { if ($("tplSelect").value) loadTemplateIntoDay($("tplSelect").value); });
+$("tplNewBtn").onclick = () => openTplEditor();
+$("tplAddExBtn").onclick = () => addTplExInput();
+$("tplSaveBtn").onclick = saveTemplate;
+$("tplCancelBtn").onclick = () => { $("tplEditor").style.display = "none"; editingTplId = null; };
 $("headerDate").textContent = new Date().toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});

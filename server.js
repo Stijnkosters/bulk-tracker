@@ -26,9 +26,13 @@ const DEFAULT_SETTINGS = {
 function loadDB() {
   try {
     const raw = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-    return { settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) }, logs: raw.logs || {} };
+    return {
+      settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
+      logs: raw.logs || {},
+      templates: Array.isArray(raw.templates) ? raw.templates : [],
+    };
   } catch {
-    return { settings: { ...DEFAULT_SETTINGS }, logs: {} };
+    return { settings: { ...DEFAULT_SETTINGS }, logs: {}, templates: [] };
   }
 }
 function saveDB(db) {
@@ -103,7 +107,31 @@ function buildWeeklySummary() {
 // ---- API ----
 app.get("/api/state", (req, res) => {
   const logs = logsAscending().reverse().slice(0, 90);
-  res.json({ settings: DB.settings, logs });
+  res.json({ settings: DB.settings, logs, templates: DB.templates || [] });
+});
+
+// ---- Trainingsschema's (templates) ----
+app.post("/api/templates", (req, res) => {
+  const b = req.body || {};
+  const name = (b.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Naam ontbreekt" });
+  const exercises = Array.isArray(b.exercises) ? b.exercises.map((e) => String(e).trim()).filter(Boolean) : [];
+  DB.templates = DB.templates || [];
+  if (b.id) {
+    const idx = DB.templates.findIndex((t) => t.id === b.id);
+    if (idx >= 0) DB.templates[idx] = { id: b.id, name, exercises };
+    else DB.templates.push({ id: b.id, name, exercises });
+  } else {
+    DB.templates.push({ id: "tpl_" + Date.now(), name, exercises });
+  }
+  saveDB(DB);
+  res.json({ ok: true, templates: DB.templates });
+});
+
+app.delete("/api/templates/:id", (req, res) => {
+  DB.templates = (DB.templates || []).filter((t) => t.id !== req.params.id);
+  saveDB(DB);
+  res.json({ ok: true, templates: DB.templates });
 });
 
 app.post("/api/log", (req, res) => {
