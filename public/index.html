@@ -147,7 +147,11 @@
   .btn-add { background: var(--surface-2); color: var(--accent); border: 1px dashed var(--line); width: 100%; padding: 12px; border-radius: 11px; font-family: var(--display); font-weight: 600; font-size: 13px; margin-top: 4px; }
   .btn-add:active { background: var(--bg); }
   .ex { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
-  .ex-top { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .ex-top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .ex-note { width: 100% !important; font-family: var(--body) !important; font-size: 13px !important; padding: 9px 11px !important; background: var(--surface) !important; color: var(--muted) !important; margin-bottom: 10px; border-style: dashed !important; }
+  .ex-note:focus { color: var(--text) !important; border-style: solid !important; }
+  .tpl-ex-block { margin-bottom: 12px; }
+  .tpl-ex-note { width: 100% !important; font-family: var(--body) !important; font-size: 13px !important; padding: 9px 11px !important; margin-top: 6px; color: var(--muted) !important; border-style: dashed !important; }
   .ex-name { flex: 1; font-family: var(--body) !important; font-size: 15px !important; padding: 11px !important; background: var(--surface) !important; }
   .ex-del, .set-del { background: none; color: var(--dim); font-size: 18px; line-height: 1; padding: 6px 8px; flex-shrink: 0; border-radius: 8px; }
   .ex-del:active, .set-del:active { background: var(--bg); color: var(--over); }
@@ -397,11 +401,14 @@ function addExercise(data) {
       <input class="ex-name" placeholder="Oefening (bijv. Bench press)" />
       <button type="button" class="ex-del" aria-label="Verwijder oefening">✕</button>
     </div>
+    <input class="ex-note" placeholder="notitie (bijv. per kant) — optioneel" />
     <div class="sets"></div>
     <button type="button" class="set-add">+ set</button>`;
   $("exList").appendChild(ex);
   ex.querySelector(".ex-name").value = data?.name || "";
+  ex.querySelector(".ex-note").value = data?.note || "";
   ex.querySelector(".ex-name").addEventListener("input", scheduleSave);
+  ex.querySelector(".ex-note").addEventListener("input", scheduleSave);
   ex.querySelector(".ex-del").onclick = () => { ex.remove(); scheduleSave(); };
   const setsWrap = ex.querySelector(".sets");
   ex.querySelector(".set-add").onclick = () => { addSet(setsWrap); scheduleSave(); };
@@ -435,13 +442,14 @@ function collectExercises() {
   const out = [];
   document.querySelectorAll("#exList .ex").forEach((ex) => {
     const name = ex.querySelector(".ex-name").value.trim();
+    const note = ex.querySelector(".ex-note").value.trim();
     const sets = [];
     ex.querySelectorAll(".set").forEach((s) => {
       const kg = s.querySelector(".set-kg").value;
       const reps = s.querySelector(".set-reps").value;
       if (kg !== "" || reps !== "") sets.push({ weight: kg === "" ? null : Number(kg), reps: reps === "" ? null : Number(reps) });
     });
-    if (name || sets.length) out.push({ name, sets });
+    if (name || sets.length) out.push({ name, note, sets });
   });
   return out;
 }
@@ -732,7 +740,7 @@ function renderTemplates() {
     <div class="tpl-row">
       <div class="tpl-info">
         <div class="tpl-nm">${escHtml(t.name)}</div>
-        <div class="tpl-ex">${(t.exercises || []).map(escHtml).join(" · ") || "geen oefeningen"}</div>
+        <div class="tpl-ex">${(t.exercises || []).map((e) => { const x = exGet(e); return escHtml(x.name) + (x.note ? ` (${escHtml(x.note)})` : ""); }).join(" · ") || "geen oefeningen"}</div>
       </div>
       <button class="tpl-edit" data-edit="${t.id}">bewerk</button>
       <button class="tpl-del" data-del="${t.id}">verwijder</button>
@@ -746,24 +754,36 @@ function openTplEditor(tpl) {
   $("tplName").value = tpl?.name || "";
   $("tplExInputs").innerHTML = "";
   const exs = tpl?.exercises?.length ? tpl.exercises : [""];
-  exs.forEach((name) => addTplExInput(name));
+  exs.forEach((e) => addTplExInput(e));
   $("tplEditor").style.display = "block";
 }
 
-function addTplExInput(value) {
-  const row = document.createElement("div");
-  row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:8px";
-  row.innerHTML = `<input type="text" class="tpl-ex-name" style="font-family:var(--body)!important" placeholder="Oefening (bijv. Bench press)" />
-    <button type="button" class="set-del" aria-label="Verwijder">✕</button>`;
-  $("tplExInputs").appendChild(row);
-  row.querySelector(".tpl-ex-name").value = value || "";
-  row.querySelector(".set-del").onclick = () => row.remove();
+function exGet(e) {
+  return typeof e === "string" ? { name: e, note: "" } : { name: e?.name || "", note: e?.note || "" };
+}
+
+function addTplExInput(data) {
+  const x = exGet(data);
+  const block = document.createElement("div");
+  block.className = "tpl-ex-block";
+  block.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" class="tpl-ex-name" style="font-family:var(--body)!important" placeholder="Oefening (bijv. Bench press)" />
+      <button type="button" class="set-del" aria-label="Verwijder">✕</button>
+    </div>
+    <input type="text" class="tpl-ex-note" placeholder="notitie (bijv. per kant) — optioneel" />`;
+  $("tplExInputs").appendChild(block);
+  block.querySelector(".tpl-ex-name").value = x.name;
+  block.querySelector(".tpl-ex-note").value = x.note;
+  block.querySelector(".set-del").onclick = () => block.remove();
 }
 
 async function saveTemplate() {
   const name = $("tplName").value.trim();
   if (!name) { toast("Geef het schema een naam", true); return; }
-  const exercises = [...document.querySelectorAll("#tplExInputs .tpl-ex-name")].map((i) => i.value.trim()).filter(Boolean);
+  const exercises = [...document.querySelectorAll("#tplExInputs .tpl-ex-block")]
+    .map((b) => ({ name: b.querySelector(".tpl-ex-name").value.trim(), note: b.querySelector(".tpl-ex-note").value.trim() }))
+    .filter((e) => e.name);
   const r = await fetch("/api/templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: editingTplId, name, exercises }) });
   const data = await r.json();
   if (r.ok) {
@@ -788,7 +808,7 @@ function loadTemplateIntoDay(id) {
   const hasData = [...document.querySelectorAll("#exList .set-kg, #exList .set-reps")].some((i) => i.value !== "");
   if (hasData && !confirm(`Bestaande oefeningen vervangen door "${tpl.name}"?`)) { $("tplSelect").value = ""; return; }
   $("exList").innerHTML = "";
-  if (tpl.exercises.length) tpl.exercises.forEach((name) => addExercise({ name, sets: [null] }));
+  if (tpl.exercises.length) tpl.exercises.forEach((e) => { const x = exGet(e); addExercise({ name: x.name, note: x.note, sets: [null] }); });
   else addExercise();
   if (tpl.name) $("fTraining").value = tpl.name;
   $("tplSelect").value = "";

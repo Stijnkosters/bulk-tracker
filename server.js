@@ -115,7 +115,13 @@ app.post("/api/templates", (req, res) => {
   const b = req.body || {};
   const name = (b.name || "").trim();
   if (!name) return res.status(400).json({ error: "Naam ontbreekt" });
-  const exercises = Array.isArray(b.exercises) ? b.exercises.map((e) => String(e).trim()).filter(Boolean) : [];
+  const exercises = Array.isArray(b.exercises)
+    ? b.exercises
+        .map((e) => (typeof e === "string"
+          ? { name: e.trim(), note: "" }
+          : { name: String(e.name || "").trim(), note: String(e.note || "").trim() }))
+        .filter((e) => e.name)
+    : [];
   DB.templates = DB.templates || [];
   if (b.id) {
     const idx = DB.templates.findIndex((t) => t.id === b.id);
@@ -177,7 +183,7 @@ app.get("/api/export.csv", (req, res) => {
   };
   const exText = (ex) =>
     (ex || [])
-      .map((e) => `${e.name || ""} ${(e.sets || []).map((s) => `${s.weight ?? ""}x${s.reps ?? ""}`).join("/")}`.trim())
+      .map((e) => `${e.name || ""}${e.note ? ` (${e.note})` : ""} ${(e.sets || []).map((s) => `${s.weight ?? ""}x${s.reps ?? ""}`).join("/")}`.trim())
       .join("; ");
   const lines = [headers.join(",")];
   for (const l of rows) {
