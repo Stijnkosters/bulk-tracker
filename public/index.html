@@ -150,6 +150,8 @@
   .ex-top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .ex-note { width: 100% !important; font-family: var(--body) !important; font-size: 13px !important; padding: 9px 11px !important; background: var(--surface) !important; color: var(--muted) !important; margin-bottom: 10px; border-style: dashed !important; }
   .ex-note:focus { color: var(--text) !important; border-style: solid !important; }
+  .ex-last { font-family: var(--mono); font-size: 12px; line-height: 1.4; color: var(--accent); background: rgba(255,120,71,.08); border: 1px solid rgba(255,120,71,.2); border-radius: 8px; padding: 7px 10px; margin-bottom: 10px; display: none; }
+  .ex-last b { color: #fff; font-weight: 600; }
   .tpl-ex-block { margin-bottom: 12px; }
   .tpl-ex-note { width: 100% !important; font-family: var(--body) !important; font-size: 13px !important; padding: 9px 11px !important; margin-top: 6px; color: var(--muted) !important; border-style: dashed !important; }
   .ex-name { flex: 1; font-family: var(--body) !important; font-size: 15px !important; padding: 11px !important; background: var(--surface) !important; }
@@ -402,19 +404,59 @@ function addExercise(data) {
       <button type="button" class="ex-del" aria-label="Verwijder oefening">✕</button>
     </div>
     <input class="ex-note" placeholder="notitie (bijv. per kant) — optioneel" />
+    <div class="ex-last"></div>
     <div class="sets"></div>
     <button type="button" class="set-add">+ set</button>`;
   $("exList").appendChild(ex);
   ex.querySelector(".ex-name").value = data?.name || "";
   ex.querySelector(".ex-note").value = data?.note || "";
-  ex.querySelector(".ex-name").addEventListener("input", scheduleSave);
+  ex.querySelector(".ex-name").addEventListener("input", () => { scheduleSave(); updateExerciseHint(ex); });
   ex.querySelector(".ex-note").addEventListener("input", scheduleSave);
   ex.querySelector(".ex-del").onclick = () => { ex.remove(); scheduleSave(); };
   const setsWrap = ex.querySelector(".sets");
   ex.querySelector(".set-add").onclick = () => { addSet(setsWrap); scheduleSave(); };
   const sets = data?.sets && data.sets.length ? data.sets : [null];
   sets.forEach((s) => addSet(setsWrap, s));
+  updateExerciseHint(ex);
   return ex;
+}
+
+// Zoekt de meest recente eerdere sessie met dezelfde oefening
+function lastPerformance(name, beforeDate) {
+  const key = (name || "").trim().toLowerCase();
+  if (!key) return null;
+  for (const log of STATE.logs) { // nieuwste eerst
+    if (beforeDate && log.date >= beforeDate) continue; // sla vandaag + toekomst over
+    const ex = (log.exercises || []).find(
+      (e) => (e.name || "").trim().toLowerCase() === key && (e.sets || []).some((s) => s.weight != null || s.reps != null)
+    );
+    if (ex) return { date: log.date, sets: ex.sets };
+  }
+  return null;
+}
+
+function bestSet(sets) {
+  let best = null;
+  for (const s of sets) {
+    if (s.weight == null && s.reps == null) continue;
+    if (!best) { best = s; continue; }
+    const bw = best.weight ?? 0, sw = s.weight ?? 0;
+    if (sw > bw || (sw === bw && (s.reps ?? 0) > (best.reps ?? 0))) best = s;
+  }
+  return best;
+}
+
+function updateExerciseHint(ex) {
+  const el = ex.querySelector(".ex-last");
+  const name = ex.querySelector(".ex-name").value;
+  const lp = lastPerformance(name, $("fDate").value);
+  if (!lp) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const setsTxt = lp.sets.filter((s) => s.weight != null || s.reps != null).map((s) => `${s.weight ?? "?"}×${s.reps ?? "?"}`).join(", ");
+  const b = bestSet(lp.sets);
+  const dd = lp.date.slice(8, 10) + "/" + lp.date.slice(5, 7);
+  const target = b ? ` · verslaan: <b>${b.weight ?? "?"}×${b.reps ?? "?"}</b>` : "";
+  el.innerHTML = `Vorige ${dd}: ${setsTxt}${target}`;
+  el.style.display = "block";
 }
 
 function addSet(wrap, data) {
