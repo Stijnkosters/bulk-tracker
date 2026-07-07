@@ -30,9 +30,10 @@ function loadDB() {
       settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
       logs: raw.logs || {},
       templates: Array.isArray(raw.templates) ? raw.templates : [],
+      reviews: raw.reviews || {},
     };
   } catch {
-    return { settings: { ...DEFAULT_SETTINGS }, logs: {}, templates: [] };
+    return { settings: { ...DEFAULT_SETTINGS }, logs: {}, templates: [], reviews: {} };
   }
 }
 function saveDB(db) {
@@ -138,6 +139,140 @@ app.delete("/api/templates/:id", (req, res) => {
   DB.templates = (DB.templates || []).filter((t) => t.id !== req.params.id);
   saveDB(DB);
   res.json({ ok: true, templates: DB.templates });
+});
+
+// ---- Weekoverzicht & zondag-review ----
+function weekStartOf(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const day = (d.getUTCDay() + 6) % 7; // 0 = maandag
+  d.setUTCDate(d.getUTCDate() - day);
+  return d.toISOString().slice(0, 10);
+}
+
+function isoWeekNum(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day + 3); // donderdag van die week
+  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const jday = (jan4.getUTCDay() + 6) % 7;
+  jan4.setUTCDate(jan4.getUTCDate() - jday + 3);
+  return 1 + Math.round((d - jan4) / (7 * 86400000));
+}
+
+function buildWeekAgg(weekStart) {
+  const start = new Date(weekStart + "T00:00:00Z");
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setUTCDate(start.getUTCDate() + i);
+    const ds = d.toISOString().slice(0, 10);
+    days.push(DB.logs[ds] || { date: ds });
+  }
+  const filled = days.filter((x) => x.kcal != null);
+  const avg = (k) => (filled.length ? filled.reduce((a, b) => a + (b[k] || 0), 0) / filled.length : null);
+  const weights = days.filter((x) => typeof x.weight === "number").map((x) => x.weight);
+  const avgWeight = weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : null;
+  const trainingDays = days.filter((x) => (x.training && String(x.training).trim()) || (x.exercises && x.exercises.length)).length;
+  return {
+    weekStart,
+    weekEnd: days[6].date,
+    weekNum: isoWeekNum(weekStart),
+    daysLogged: filled.length,
+    avg: { kcal: avg("kcal"), protein: avg("protein"), fat: avg("fat"), carbs: avg("carbs") },
+    avgWeight,
+    weighIns: weights.length,
+    trainingDays,
+    days,
+  };
+}
+
+app.get("/api/weeks", (req, res) => {
+  const all = logsAscending();
+  if (!all.length) return res.json({ weeks: [] });
+  const firstWeek = weekStartOf(all[0].date);
+  const curWeek = weekStartOf(new Date().toISOString().slice(0, 10));
+  const weeks = [];
+  let w = firstWeek;
+  let prev = null;
+  while (w <= curWeek) {
+    const agg = buildWeekAgg(w);
+    agg.weightChange = agg.avgWeight != null && prev?.avgWeight != null ? agg.avgWeight - prev.avgWeight : null;
+    agg.review = DB.reviews?.[w] || null;
+    weeks.push(agg);
+    prev = agg;
+    const d = new Date(w + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + 7);
+    w = d.toISOString().slice(0, 10);
+  }
+  weeks.reverse(); // nieuwste eerst
+  res.json({ weeks });
+});
+
+app.post("/api/review", async (req, res) => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const week = weekStartOf(((req.body || {}).week || new Date().toISOString().slice(0, 10)));
+  const cur = buildWeekAgg(week);
+  const prevStart = (() => { const d = new Date(week + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 7); return d.toISOString().slice(0, 10); })();
+  const prev = buildWeekAgg(prevStart);
+  const s = DB.settings;
+  const asc = logsAscending().filter((l) => typeof l.weight === "number");
+  const trend = weeklyRateTrend(asc);
+  const r = (v, d = 0) => (v == null ? "—" : Number(v).toFixed(d));
+
+  if (!apiKey) {
+    return res.status(400).json({ error: "Geen ANTHROPIC_API_KEY ingesteld op Railway.", week: cur });
+  }
+
+  const wk = (a, label) => `${label} (${a.weekStart} t/m ${a.weekEnd}, ${a.daysLogged}/7 gelogd, ${a.trainingDays} trainingsdagen):
+- Gem. kcal ${r(a.avg.kcal)} | eiwit ${r(a.avg.protein)} g | vet ${r(a.avg.fat)} g | koolh ${r(a.avg.carbs)} g
+- Gem. gewicht: ${r(a.avgWeight, 1)} kg (${a.weighIns} weegmomenten)
+Dagen: ${a.days.map((d) => `${d.date.slice(5)}: ${d.kcal != null ? `${r(d.kcal)}kcal E${r(d.protein)}/V${r(d.fat)}/K${r(d.carbs)}` : "niet gelogd"}${d.weight ? ` ${d.weight}kg` : ""}${d.training ? ` [${d.training}]` : ""}`).join("\n")}`;
+
+  const dataBlock = `PROFIEL: Stijn, 22 jr, 1.86 m. Lean bulk: start ${s.start_weight} kg, doel ${s.goal_weight} kg lean met behoud sixpack.
+HUIDIGE TARGETS: ${s.target_kcal} kcal · eiwit ${s.target_protein} g · vet ${s.target_fat} g · koolh ${s.target_carbs} g.
+STREEFTEMPO: +${s.weekly_rate_min}-${s.weekly_rate_max} kg/week.
+GEWICHTSTREND (regressie laatste ~2 wk): ${trend == null ? "nog onvoldoende data" : (trend > 0 ? "+" : "") + r(trend, 2) + " kg/week"}
+GEWICHTSVERANDERING vs vorige week: ${cur.weightChange == null ? (cur.avgWeight != null && prev.avgWeight != null ? r(cur.avgWeight - prev.avgWeight, 2) + " kg" : "—") : (cur.weightChange > 0 ? "+" : "") + r(cur.weightChange, 2) + " kg"}
+
+${wk(cur, "DEZE WEEK")}
+
+${wk(prev, "VORIGE WEEK")}`;
+
+  const system = `Je bent de fitnesscoach van Stijn, een directe e-commerce operator. Schrijf een wekelijkse zondag-beoordeling in het Nederlands. Direct, resultaatgericht, geen open deuren of motivatiespeeches. Wees eerlijk: lean bulk = +0,2-0,3 kg/week; sneller = vet erbij, trager = geen groei. Gebruik EXACT deze structuur met markdown-koppen:
+## Observatie
+Feiten uit de data, kort.
+## Analyse
+Wat betekent dit? Tempo vs streeftempo, macro-adherentie, patronen (bv. vet structureel te hoog).
+## Verdict
+Op koers / te snel / te traag — één regel met reden.
+## Macro-aanpassing
+Concreet: targets HOUDEN of WIJZIGEN. Bij wijzigen: geef exacte nieuwe cijfers (kcal/E/V/K) en waarom. Baseer +/-150 kcal aanpassingen op het gewichtstempo. Bij te weinig data: benoem en houd targets.
+## Acties komende week
+3-5 concrete acties.
+## KPI's
+Wat moet volgende week op de teller staan om succesvol te zijn.`;
+
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+        max_tokens: 2000,
+        system,
+        messages: [{ role: "user", content: `Hier is mijn weekdata. Geef de zondag-beoordeling.\n\n${dataBlock}` }],
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) return res.status(502).json({ error: data?.error?.message || "API-fout" });
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+    DB.reviews = DB.reviews || {};
+    DB.reviews[week] = { text, created_at: new Date().toISOString() };
+    saveDB(DB);
+    res.json({ review: text, week });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 app.post("/api/log", (req, res) => {

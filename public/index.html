@@ -177,6 +177,23 @@
   .tpl-row .tpl-del { color: var(--dim); }
   .tpl-name-input { font-family: var(--body) !important; margin-bottom: 10px; }
 
+  /* WEEKOVERZICHT */
+  .wk { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; background: var(--surface-2); overflow: hidden; }
+  .wk-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 13px 14px; cursor: pointer; }
+  .wk-head:active { background: var(--bg); }
+  .wk-title { font-family: var(--display); font-weight: 600; font-size: 14px; }
+  .wk-range { color: var(--muted); font-family: var(--mono); font-size: 11px; font-weight: 400; margin-left: 6px; }
+  .wk-sub { font-size: 11px; color: var(--dim); margin-top: 3px; }
+  .wk-rev { color: var(--good); }
+  .wk-stats { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; flex-shrink: 0; line-height: 1.5; }
+  .wk-body { padding: 0 14px 14px; }
+  .wk-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .wk-table th { text-align: left; color: var(--dim); font-weight: 500; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  .wk-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  .wk-avg td { color: var(--accent); font-weight: 600; border-bottom: none; }
+  .wk-review { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .wk-review-date { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 8px; }
+
   /* CHART */
   .chart-svg { width: 100%; height: 168px; display: block; overflow: visible; }
   .chart-svg .grid { stroke: var(--line); stroke-width: 1; }
@@ -269,14 +286,20 @@
     <div class="macro"><div class="top"><span class="name">Calorieën</span><span class="vals"><b id="wkNow">—</b> / <span id="wkTar">3100</span></span></div><div class="track"><div class="fill" id="wkBar"></div></div></div>
   </div>
 
-  <!-- AI FEEDBACK -->
+  <!-- ZONDAG-REVIEW -->
   <div class="card">
-    <div class="card-label">Weekfeedback</div>
-    <div class="fb" id="fbBox"><div class="empty">Genereer feedback op basis van je week, of kopieer je data naar Claude.</div></div>
+    <div class="card-label">Zondag-review · deze week</div>
+    <div class="fb" id="fbBox"><div class="empty">Vraag elke zondag je weekbeoordeling aan: volledige analyse + advies of je macro's moeten wijzigen.</div></div>
     <div class="btn-row" style="margin-top:14px">
-      <button class="btn-primary" id="fbBtn">Genereer weekfeedback</button>
+      <button class="btn-primary" id="fbBtn">Vraag weekbeoordeling aan</button>
       <button class="btn-ghost" id="copyBtn">Kopieer weekdata</button>
     </div>
+  </div>
+
+  <!-- WEEKOVERZICHT -->
+  <div class="card">
+    <div class="card-label">Weekoverzicht</div>
+    <div id="weeksList"><div class="empty">Nog geen weken met data.</div></div>
   </div>
 
   <!-- HISTORY -->
@@ -646,6 +669,7 @@ async function load() {
   STATE = await r.json();
   if (!$("fDate").value) loadDay(todayStr());
   renderAll();
+  loadWeeks();
 }
 
 function collectForm() {
@@ -688,6 +712,7 @@ async function autoSave() {
     const st = await fetch("/api/state");
     STATE = await st.json();
     renderHero(); renderChart(); renderWeek(); renderHistory();
+    loadWeeks();
     setStatus("saved");
   } catch {
     setStatus("error");
@@ -707,22 +732,100 @@ function mdToHtml(md) {
   return html;
 }
 
+function localWeekStart() {
+  const d = new Date();
+  const day = (d.getDay() + 6) % 7; // 0 = maandag
+  d.setDate(d.getDate() - day);
+  return d.toLocaleDateString("sv-SE");
+}
+
 async function feedback() {
   const btn = $("fbBtn");
   btn.innerHTML = '<span class="spinner"></span>';
   btn.disabled = true;
   try {
-    const r = await fetch("/api/feedback", { method: "POST" });
+    const r = await fetch("/api/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ week: localWeekStart() }) });
     const data = await r.json();
-    if (r.ok && data.feedback) {
-      $("fbBox").innerHTML = mdToHtml(data.feedback);
+    if (r.ok && data.review) {
+      $("fbBox").innerHTML = mdToHtml(data.review);
+      await loadWeeks();
     } else {
-      $("fbBox").innerHTML = `<div class="empty">${data.error || "Kon geen feedback ophalen."}</div>`;
-      toast(data.error ? "Geen API-key — kopieer data" : "Mislukt", true);
+      $("fbBox").innerHTML = `<div class="empty">${data.error || "Kon geen beoordeling ophalen."}</div>`;
     }
   } catch (e) { toast("Verbinding mislukt", true); }
-  btn.innerHTML = "Genereer weekfeedback";
+  btn.innerHTML = "Vraag weekbeoordeling aan";
   btn.disabled = false;
+}
+
+// ---- Weekoverzicht ----
+let WEEKS = [];
+let openWeek = null;
+
+async function loadWeeks() {
+  try {
+    const r = await fetch("/api/weeks");
+    WEEKS = (await r.json()).weeks || [];
+  } catch { WEEKS = []; }
+  renderWeeks();
+}
+
+function renderWeeks() {
+  const box = $("weeksList");
+  if (!WEEKS.length) { box.innerHTML = '<div class="empty">Nog geen weken met data.</div>'; return; }
+  const fmt = (d) => d.slice(8, 10) + "/" + d.slice(5, 7);
+  box.innerHTML = WEEKS.map((w) => {
+    const open = openWeek === w.weekStart;
+    const dw = w.weightChange == null ? "—" : (w.weightChange > 0 ? "+" : "") + w.weightChange.toFixed(2) + " kg";
+    const kc = w.avg.kcal == null ? "—" : Math.round(w.avg.kcal) + " kcal";
+    return `<div class="wk">
+      <div class="wk-head" data-toggle="${w.weekStart}">
+        <div>
+          <div class="wk-title">Week ${w.weekNum}<span class="wk-range">${fmt(w.weekStart)}–${fmt(w.weekEnd)}</span></div>
+          <div class="wk-sub">${w.daysLogged}/7 gelogd · ${w.trainingDays} trainingen${w.review ? ' · <span class="wk-rev">✓ review</span>' : ""}</div>
+        </div>
+        <div class="wk-stats">${kc}<br>${dw}</div>
+      </div>
+      ${open ? renderWeekDetail(w) : ""}
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-toggle]").forEach((h) =>
+    (h.onclick = () => { openWeek = openWeek === h.dataset.toggle ? null : h.dataset.toggle; renderWeeks(); }));
+  box.querySelectorAll("[data-review]").forEach((b) =>
+    (b.onclick = (e) => { e.stopPropagation(); requestReview(b.dataset.review, b); }));
+}
+
+function renderWeekDetail(w) {
+  const rows = w.days.map((d) => {
+    const has = d.kcal != null;
+    return `<tr><td>${d.date.slice(8, 10)}/${d.date.slice(5, 7)}</td><td>${has ? Math.round(d.kcal) : "—"}</td><td>${has ? Math.round(d.protein || 0) : "—"}</td><td>${has ? Math.round(d.fat || 0) : "—"}</td><td>${has ? Math.round(d.carbs || 0) : "—"}</td><td>${d.weight ?? "—"}</td></tr>`;
+  }).join("");
+  const a = w.avg;
+  const avgRow = `<tr class="wk-avg"><td>gem.</td><td>${a.kcal ? Math.round(a.kcal) : "—"}</td><td>${a.protein ? Math.round(a.protein) : "—"}</td><td>${a.fat ? Math.round(a.fat) : "—"}</td><td>${a.carbs ? Math.round(a.carbs) : "—"}</td><td>${w.avgWeight ? w.avgWeight.toFixed(1) : "—"}</td></tr>`;
+  const review = w.review
+    ? `<div class="fb wk-review">${mdToHtml(w.review.text)}<div class="wk-review-date">review van ${w.review.created_at.slice(0, 10)}</div></div>
+       <button class="btn-ghost" data-review="${w.weekStart}" style="margin-top:10px">Review opnieuw genereren</button>`
+    : `<button class="btn-primary" data-review="${w.weekStart}" style="margin-top:12px">Beoordeling aanvragen voor deze week</button>`;
+  return `<div class="wk-body">
+    <table class="wk-table"><thead><tr><th>dag</th><th>kcal</th><th>E</th><th>V</th><th>K</th><th>kg</th></tr></thead><tbody>${rows}${avgRow}</tbody></table>
+    ${review}
+  </div>`;
+}
+
+async function requestReview(week, btn) {
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+  try {
+    const r = await fetch("/api/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ week }) });
+    const data = await r.json();
+    if (r.ok && data.review) {
+      await loadWeeks();
+      openWeek = week;
+      renderWeeks();
+      toast("Review klaar");
+    } else {
+      toast(data.error ? "Geen API-key ingesteld" : "Mislukt", true);
+      if (btn) { btn.disabled = false; btn.textContent = "Beoordeling aanvragen voor deze week"; }
+    }
+  } catch { toast("Verbinding mislukt", true); if (btn) { btn.disabled = false; btn.textContent = "Beoordeling aanvragen"; } }
 }
 
 async function copyData() {
