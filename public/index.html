@@ -247,14 +247,14 @@
       <input type="date" id="fDate" />
     </div>
     <div class="grid2">
-      <div class="field"><label for="fWeight">Gewicht (kg)</label><input type="number" inputmode="decimal" step="0.1" id="fWeight" placeholder="72.0" /></div>
-      <div class="field"><label for="fKcal">Calorieën</label><input type="number" inputmode="numeric" id="fKcal" placeholder="3100" /></div>
+      <div class="field"><label for="fWeight">Gewicht (kg)</label><input type="text" inputmode="decimal" id="fWeight" placeholder="72,0" /></div>
+      <div class="field"><label for="fKcal">Calorieën</label><input type="text" inputmode="numeric" id="fKcal" placeholder="3100" /></div>
     </div>
     <div class="grid4">
-      <div class="field"><label for="fProtein">Eiwit (g)</label><input type="number" inputmode="numeric" id="fProtein" placeholder="160" /></div>
-      <div class="field"><label for="fFat">Vet (g)</label><input type="number" inputmode="numeric" id="fFat" placeholder="95" /></div>
-      <div class="field"><label for="fCarbs">Koolhydraten (g)</label><input type="number" inputmode="numeric" id="fCarbs" placeholder="400" /></div>
-      <div class="field"><label for="fWaist">Buik (cm)</label><input type="number" inputmode="decimal" step="0.1" id="fWaist" placeholder="optioneel" /></div>
+      <div class="field"><label for="fProtein">Eiwit (g)</label><input type="text" inputmode="numeric" id="fProtein" placeholder="160" /></div>
+      <div class="field"><label for="fFat">Vet (g)</label><input type="text" inputmode="numeric" id="fFat" placeholder="95" /></div>
+      <div class="field"><label for="fCarbs">Koolhydraten (g)</label><input type="text" inputmode="numeric" id="fCarbs" placeholder="400" /></div>
+      <div class="field"><label for="fWaist">Buik (cm)</label><input type="text" inputmode="decimal" id="fWaist" placeholder="optioneel" /></div>
     </div>
     <div class="field"><label for="fTraining">Training (type dag)</label><input type="text" id="fTraining" style="font-family:var(--body)" placeholder="Push / Pull / Legs ..." /></div>
 
@@ -314,12 +314,12 @@
     <summary>Targets aanpassen <span class="chev">▾</span></summary>
     <div class="card">
       <div class="grid2">
-        <div class="field"><label>Calorieën</label><input type="number" id="sKcal" /></div>
-        <div class="field"><label>Eiwit (g)</label><input type="number" id="sProtein" /></div>
-        <div class="field"><label>Vet (g)</label><input type="number" id="sFat" /></div>
-        <div class="field"><label>Koolhydraten (g)</label><input type="number" id="sCarbs" /></div>
-        <div class="field"><label>Startgewicht</label><input type="number" step="0.1" id="sStart" /></div>
-        <div class="field"><label>Doelgewicht</label><input type="number" step="0.1" id="sGoal" /></div>
+        <div class="field"><label>Calorieën</label><input type="text" inputmode="numeric" id="sKcal" /></div>
+        <div class="field"><label>Eiwit (g)</label><input type="text" inputmode="numeric" id="sProtein" /></div>
+        <div class="field"><label>Vet (g)</label><input type="text" inputmode="numeric" id="sFat" /></div>
+        <div class="field"><label>Koolhydraten (g)</label><input type="text" inputmode="numeric" id="sCarbs" /></div>
+        <div class="field"><label>Startgewicht</label><input type="text" inputmode="decimal" id="sStart" /></div>
+        <div class="field"><label>Doelgewicht</label><input type="text" inputmode="decimal" id="sGoal" /></div>
       </div>
       <button class="btn-primary" id="setBtn" style="margin-top:8px">Targets opslaan</button>
     </div>
@@ -390,10 +390,15 @@ function renderTargets() {
   $("sStart").value = s.start_weight; $("sGoal").value = s.goal_weight;
 }
 
+const pnum = (v) => {
+  const n = parseFloat(String(v ?? "").trim().replace(",", "."));
+  return isNaN(n) ? 0 : n;
+};
+
 function livePreview() {
   const s = STATE.settings;
-  const p = +$("fProtein").value || 0, f = +$("fFat").value || 0;
-  const c = +$("fCarbs").value || 0, k = +$("fKcal").value || 0;
+  const p = pnum($("fProtein").value), f = pnum($("fFat").value);
+  const c = pnum($("fCarbs").value), k = pnum($("fKcal").value);
   $("pNow").textContent = p; $("fNow").textContent = f; $("cNow").textContent = c; $("kNow").textContent = k;
   setBar("pBar", p, s.target_protein, "protein");
   setBar("fBar", f, s.target_fat, "fat");
@@ -512,7 +517,7 @@ function collectExercises() {
     ex.querySelectorAll(".set").forEach((s) => {
       const kg = s.querySelector(".set-kg").value;
       const reps = s.querySelector(".set-reps").value;
-      if (kg !== "" || reps !== "") sets.push({ weight: kg === "" ? null : Number(kg), reps: reps === "" ? null : Number(reps) });
+      if (kg !== "" || reps !== "") sets.push({ weight: kg === "" ? null : pnum(kg), reps: reps === "" ? null : pnum(reps) });
     });
     if (name || sets.length) out.push({ name, note, sets });
   });

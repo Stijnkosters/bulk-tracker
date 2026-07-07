@@ -45,7 +45,11 @@ function saveDB(db) {
 let DB = loadDB();
 saveDB(DB);
 
-const num = (v) => (v === "" || v == null ? null : Number(v));
+const num = (v) => {
+  if (v === "" || v == null) return null;
+  const n = Number(String(v).trim().replace(",", "."));
+  return isNaN(n) ? null : n;
+};
 const fmtDate = (d) => d.toISOString().slice(0, 10);
 
 function logsAscending() {
@@ -283,7 +287,13 @@ app.post("/api/log", (req, res) => {
     weight: num(b.weight), kcal: num(b.kcal), protein: num(b.protein),
     fat: num(b.fat), carbs: num(b.carbs), waist: num(b.waist),
     training: b.training || null,
-    exercises: Array.isArray(b.exercises) ? b.exercises : [],
+    exercises: Array.isArray(b.exercises)
+      ? b.exercises.map((e) => ({
+          name: e?.name || "",
+          note: e?.note || "",
+          sets: Array.isArray(e?.sets) ? e.sets.map((s) => ({ weight: num(s?.weight), reps: num(s?.reps) })) : [],
+        }))
+      : [],
     notes: b.notes || null,
     updated_at: new Date().toISOString(),
   };
@@ -299,7 +309,10 @@ app.delete("/api/log/:date", (req, res) => {
 
 app.post("/api/settings", (req, res) => {
   for (const [k, v] of Object.entries(req.body || {})) {
-    if (k in DEFAULT_SETTINGS) DB.settings[k] = Number(v);
+    if (k in DEFAULT_SETTINGS) {
+      const n = Number(String(v).trim().replace(",", "."));
+      if (!isNaN(n)) DB.settings[k] = n;
+    }
   }
   saveDB(DB);
   res.json({ ok: true, settings: DB.settings });
